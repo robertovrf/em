@@ -1,0 +1,71 @@
+const char debugMSG[] = "[@ProcessingResults]"
+
+component provides App requires io.Output out, io.TextFile, data.StringUtil strUtil, 
+    time.DateUtil dateUtil, data.IntUtil iu {
+    
+    TextFile inputFile
+    TextFile outputFile
+
+    int diffInSeconds(char start[], char end[]) {
+        String startStr[] = strUtil.explode(start, ":")
+        int hours = iu.intFromString(startStr[0].string)
+        int minutes = iu.intFromString(startStr[1].string)
+        int seconds = iu.intFromString(startStr[2].string)
+        DateTime startTime = new DateTime(0, 0, 0, hours, minutes, seconds, 0)
+        String endStr[] = strUtil.explode(end, ":")
+        hours = iu.intFromString(endStr[0].string)
+        minutes = iu.intFromString(endStr[1].string)
+        seconds = iu.intFromString(endStr[2].string)
+        DateTime endTime = new DateTime(0, 0, 0, hours, minutes, seconds, 0)
+        DateTime result = dateUtil.diff(startTime, endTime)
+        return result.toMilliseconds()/1000
+    }
+
+    void stretchingBetweenLine(char value[], char start[], char end[]) {
+        int diff = diffInSeconds(start, end)
+        if (diff >= 5) {
+            diff = diff / 5
+            for (int i = 0; i < diff; i++) {
+                outputFile.writeLine(value)
+            }
+        }
+    }
+    
+    void stretching(char value[], char start[], char end[]) {
+        int diff = diffInSeconds(start, end)
+        if (diff > 5) {
+            diff = diff / 5
+            for (int i = 0; i < diff; i++) {
+                outputFile.writeLine(value)
+            }
+        }
+    }
+
+    int App:main(AppParam params[]) {
+        out.println("Started!")
+        inputFile = new TextFile("cache-270rounds.txt", File.READ)
+        outputFile = new TextFile("formated-cache-result.txt", File.WRITE)
+        char previousEndTime[] = null
+        char previousValue[] = null
+        while (!inputFile.eof()) {
+            char rawInput[] = inputFile.readLine()
+            //out.println("$(rawInput)")
+            String parsedLine[] = strUtil.explode(rawInput, " ")
+            //out.println("$(iu.intToString(parsedLine.arrayLength)) - $(parsedLine[0].string) - $(parsedLine[1].string)")
+            if (previousEndTime != null) {
+                // not first line
+                // parsedLine[2].string startTime
+                stretchingBetweenLine(previousValue, previousEndTime, parsedLine[2].string)
+            }
+            // value = parsedLine[1].string, startTime = parsedLine[2].string, endTime = parsedLine[3].string
+            stretching(parsedLine[1].string, parsedLine[2].string, parsedLine[3].string)
+            outputFile.writeLine(parsedLine[1].string)
+            previousEndTime = parsedLine[3].string
+            previousValue = parsedLine[1].string
+        }
+        inputFile.close()
+        outputFile.close()
+        out.println("Ended!")
+        return 0
+    }
+}

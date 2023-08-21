@@ -1,0 +1,5 @@
+interface MetricNotifier {
+	bool registerMetric()
+	void setIP(char ip[])
+	void notify(char perceptionData[])
+}

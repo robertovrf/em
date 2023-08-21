@@ -1,0 +1,342 @@
+// LearningCore
+//
+// This component implements the core of the Learning modules. This involves the following:
+// 1. classification algorithm
+// 2. algorithm responsible to select the
+//
+// Author: Roberto Rodrigues Filho
+// March @ 2017
+// October @ 2022 - update
+
+// environment class
+data EnvClass {
+	Range ranges[]
+	char config[]
+}
+
+data Range {
+	int highestValue
+	int lowestValue
+	char dimension[]
+}
+
+data Event {
+	char name[]
+	char source[]
+	dec value
+	int count
+	DateTime startTime
+	DateTime endTime
+}
+
+data Metric {
+	char name[]
+	char source[]
+	dec value
+	int count
+	bool preferHigh
+	DateTime startTime
+	DateTime endTime
+}
+
+// exploration cycle
+data ExplCycle {
+	Event events[]
+	Metric metrics[] // there is a leading metric
+	char config[]
+}
+
+const char debugMSG[] = "[@LearningCore]"
+
+// FEATURES
+const char BIG[] = "big"
+const char SMALL[] = "small"
+const char REPETITION[] = "repetition"
+
+const int ERROR = 11
+
+// this could use a database --- but I've decided not to...
+component provides learning.LearningCore requires io.Output out, data.IntUtil iu, learning.Exploration,
+	time.DateUtil dateUtil, data.StringUtil strUtil, data.json.JSONParser parser, data.DecUtil du, io.File {
+
+	EnvClass latestKnowledgeInfo 	= null
+	EnvClass knowledge[] 			= null // all classes that was identified -- knowledge base?
+	ExplCycle cycle[] 				= null // values (metrics and events) that belong to a specific cycle
+	Exploration exploration 		= null
+
+	LearningCore:LearningCore(String configs[]) {
+		exploration = new Exploration(configs)
+		latestKnowledgeInfo 	= null
+		knowledge 				= null 
+		cycle					= null
+	}
+
+	void LearningCore:exploring(char currentConfig[], char perceptionData[]) {
+		ExplCycle explCycle = parsePerceptionData(perceptionData)
+		explCycle.config = currentConfig
+		cycle = new ExplCycle[](cycle, explCycle)
+	}
+
+	void LearningCore:pushWinningArchToKNowledge() {
+		knowledge = new EnvClass[](knowledge, new EnvClass())
+		knowledge[knowledge.arrayLength-1].config = latestKnowledgeInfo.config
+		knowledge[knowledge.arrayLength-1].ranges = latestKnowledgeInfo.ranges
+	}
+
+	// TODO: this has to be passed as parameter from the InteractiveEmergentSys
+	// as well as the 
+	int getMetricIndex(Metric metrics[]) {
+		for (int pointer = 0; pointer < metrics.arrayLength; pointer++) {
+			if (metrics[pointer].name == "response_time") {
+				return pointer
+			}
+		}
+		return INT_MAX
+	}
+
+	// this is where the rule is created
+	char[] LearningCore:exploit() {
+		if (cycle != null) {
+			//knowledge = new EnvClass[](knowledge, new EnvClass())
+			latestKnowledgeInfo = new EnvClass()
+			// first range is
+			Range ranges[] = new Range[](new Range(0,9999999, new char[]("metrics")))
+			int bestArchPointer = 0
+			for (int pointer = 0; pointer < cycle.arrayLength; pointer++) {
+				int metricRTPointer = getMetricIndex(cycle[pointer].metrics)
+				if (metricRTPointer == INT_MAX) { out.println("$(debugMSG) Something bad happened when picking the main metric.") }
+				dec cycleRealMetricValue = cycle[pointer].metrics[metricRTPointer].value/cycle[pointer].metrics[metricRTPointer].count
+				if (ranges[0].lowestValue > cycleRealMetricValue) {
+					ranges[0].lowestValue = cycleRealMetricValue
+					latestKnowledgeInfo.config = cycle[pointer].config
+				}
+				if (ranges[0].highestValue < cycleRealMetricValue) {
+					ranges[0].highestValue = cycleRealMetricValue
+				}
+				// events
+				for (int pointer2 = 0; pointer2 < cycle[pointer].events.arrayLength; pointer2++) {
+					char dimension[] = cycle[pointer].events[pointer2].name
+					int rangePointer = INT_MAX
+					// verifies if dimension is already in ranges...
+					for (int pointer3 = 0; pointer3 < ranges.arrayLength; pointer3++) {
+						if (dimension == ranges[pointer3].dimension) { rangePointer = pointer3 }
+					}
+					if (rangePointer != INT_MAX) {
+						dec cycleRealEventValue = cycle[pointer].events[pointer2].value
+						if (ranges[rangePointer].lowestValue > cycleRealEventValue) {
+							ranges[rangePointer].lowestValue = cycleRealEventValue
+						}
+						if (ranges[rangePointer].highestValue < cycleRealEventValue) {
+							ranges[rangePointer].highestValue = cycleRealEventValue
+						}
+					} else {
+						ranges = new Range[](ranges, new Range(cycle[pointer].events[pointer2].value,
+							cycle[pointer].events[pointer2].value, dimension))
+					}
+				}
+			}
+			cycle = null
+			latestKnowledgeInfo.ranges = ranges
+			printRanges(ranges)
+			out.println("$(debugMSG) Winning arch: $(latestKnowledgeInfo.config)")
+			return latestKnowledgeInfo.config
+		}
+		return null
+	}
+
+	void printRanges(Range ranges[]) {
+		out.println("Environment classes:")
+		for (int i = 1; i < ranges.arrayLength; i++) {
+			out.println("$(ranges[i].dimension):")
+			out.println("$(iu.intToString(ranges[i].lowestValue)) - $(iu.intToString(ranges[i].highestValue))")
+		}
+	}
+
+	char[] LearningCore:bestConfig(char perceptionData[]) {
+		if (knowledge == null) { return null }
+		ExplCycle explCycle = parsePerceptionData(perceptionData)
+		for (int pointer = 0; pointer < knowledge.arrayLength; pointer++) {
+			// events+1 because the first item in ranges is metrics
+			if ((explCycle.events.arrayLength+1) == knowledge[pointer].ranges.arrayLength) {
+					bool isWithinRanges = true
+					for (int rangePointer = 1; rangePointer < knowledge[pointer].ranges.arrayLength; rangePointer++) {
+						int eCPointer = getExplCycleMatchingDimension(explCycle, knowledge[pointer].ranges[rangePointer].dimension)
+						if (eCPointer < INT_MAX) {
+							int eventCycleValue = explCycle.events[eCPointer].value							
+							int minValue = 0
+							int maxValue = 0
+
+							// defining minValue
+							if ((knowledge[pointer].ranges[rangePointer].lowestValue > 0) 
+								&& (knowledge[pointer].ranges[rangePointer].lowestValue < 100)) {
+								if (knowledge[pointer].ranges[rangePointer].lowestValue <= ERROR) { minValue = 1 }
+								else { minValue = knowledge[pointer].ranges[rangePointer].lowestValue - ERROR }
+							} else { minValue = 0 }
+
+							// defining maxValue
+							if ((knowledge[pointer].ranges[rangePointer].highestValue < 100) 
+								&& (knowledge[pointer].ranges[rangePointer].highestValue > 0)) {
+								if ((knowledge[pointer].ranges[rangePointer].highestValue + ERROR) >= 100) { maxValue = 99 }
+								else { maxValue = knowledge[pointer].ranges[rangePointer].highestValue + ERROR }
+							} else { maxValue = 100 }
+
+							// outside the interval
+							if ((eventCycleValue < minValue) || (eventCycleValue > maxValue)) {
+								out.println("$(iu.intToString(eventCycleValue)) | $(iu.intToString(minValue)) - $(iu.intToString(maxValue))")
+								isWithinRanges = false
+								break
+							}
+						} else {
+							isWithinRanges = false
+							break
+						}
+					}
+					if (isWithinRanges) { return knowledge[pointer].config }
+				//}
+			} else { /* verify next item in knowledge list */ }
+		}
+		return null
+	}
+
+	// this function seem a bit unecessary...
+	char[] LearningCore:considerData(char currentConfig[], char perceptionData[]) {
+		if (knowledge != null) {
+			if (bestConfig(perceptionData) != null) { return LearningCore.CLASS_DETECTED }
+		}
+		return LearningCore.CONTINUE_EXPLORATION
+	}
+
+	char[] LearningCore:checkSysStatus(char perceptionData[], char currentConfig[]) {
+		char newConfig[] = null
+		if (knowledge != null) {
+			if ((newConfig = bestConfig(perceptionData)) != null) {
+				if (newConfig != currentConfig) { return newConfig }
+				return LearningCore.CONTINUE_EXPLOITATION
+			}
+		}
+		return LearningCore.TRIGGER_EXPLORATION
+	}
+
+	char[] LearningCore:explorationRestart() {
+		return exploration.restart()
+	}
+
+	char[] LearningCore:explorationGetNext() {
+		return exploration.getNext()
+	}
+
+	bool LearningCore:explorationVisitedAllConfigs() {
+		return exploration.visitedAllConfigs()
+	}
+
+	void LearningCore:latestCycleResult(char result[]) {
+		exploration.latestCycleResult(result)
+	}
+
+	bool LearningCore:isLastCycle() {
+		return exploration.isLastCycle()
+	}
+
+	int getExplCycleMatchingDimension(ExplCycle eC, char dimension[]) {
+		for (int pointer = 0; pointer < eC.events.arrayLength; pointer++) {
+			if (eC.events[pointer].name == dimension) {
+				return pointer
+			}
+		}
+		return INT_MAX
+	}
+
+	// take the perception data and update cycle and classes
+	ExplCycle parsePerceptionData(char perceptionData[]) {
+		ExplCycle internalCycle = new ExplCycle()
+		JSONElement document = parser.parseDocument(perceptionData)
+		JSONElement metricsJSON = parser.getValue(document, "metrics")
+		if (metricsJSON != null) {
+			for (int pointer = 0; pointer < metricsJSON.children.arrayLength; pointer++) {
+				JSONElement childrenMetrics = metricsJSON.children[pointer]
+				Metric metric = new Metric()
+				metric.name = parser.getValue(childrenMetrics, "name").value
+				metric.source = parser.getValue(childrenMetrics, "source").value
+				metric.value = du.decFromString(parser.getValue(childrenMetrics, "value").value)
+				metric.count = iu.intFromString(parser.getValue(childrenMetrics, "count").value)
+				//dec metricValue = metric.value/metric.count
+				if (parser.getValue(childrenMetrics, "preferHigh").value == "true") {
+					metric.preferHigh = true
+				} else { metric.preferHigh = false }
+				metric.startTime = parseDateFromString(parser.getValue(childrenMetrics, "startTime").value)
+				metric.endTime = parseDateFromString(parser.getValue(childrenMetrics, "endTime").value)
+				internalCycle.metrics = new Metric[](internalCycle.metrics, metric)
+			}
+		}
+		// events
+		JSONElement eventsJSON = parser.getValue(document, "events")
+		if (eventsJSON != null) {
+			// events are: big, small
+			int numBig = 0
+			int numSmall = 0
+			int total = 0
+			DateTime startTime
+			JSONElement childrenMetrics
+			for (int pointer = 0; pointer < eventsJSON.children.arrayLength; pointer++) {
+				childrenMetrics = eventsJSON.children[pointer]
+				char url[] = parser.getValue(childrenMetrics, "name").value
+				int count = iu.intFromString(parser.getValue(childrenMetrics, "count").value)
+				total = total + count
+				if ((strUtil.find(url, "last") == StringUtil.NOT_FOUND)) {
+					numBig = numBig + count
+				}
+				if ((strUtil.find(url, "last") != StringUtil.NOT_FOUND)) {
+					numSmall = numSmall + count
+				}
+				if (pointer == 0) {
+					startTime = parseDateFromString(parser.getValue(childrenMetrics, "startTime").value)
+				}
+			}
+			Event eventBig = new Event()
+			eventBig.name = BIG
+			eventBig.source = parser.getValue(childrenMetrics, "source").value
+			eventBig.value = (numBig*100)/total
+			eventBig.count = total
+			eventBig.startTime = startTime
+			eventBig.endTime = parseDateFromString(parser.getValue(childrenMetrics, "endTime").value)
+			Event eventSmall = new Event()
+			eventSmall.name = SMALL
+			eventSmall.source = parser.getValue(childrenMetrics, "source").value
+			eventSmall.value = (numSmall*100)/total
+			eventSmall.count = total
+			eventSmall.startTime = startTime
+			eventSmall.endTime = parseDateFromString(parser.getValue(childrenMetrics, "endTime").value)
+			internalCycle.events = new Event[](internalCycle.events, eventBig, eventSmall)
+		}
+		return internalCycle
+	}
+
+	DateTime parseDateFromString(char string[]) {
+		if ((string == "") || (string == null)) {}
+		else {
+			DateTime result = null
+			// the way string is processed depends on pattern...
+			String helper[] = strUtil.explode(string, " ")
+			String dayStr[] = strUtil.explode(helper[0].string, "-")
+			String timeStr[] = strUtil.explode(helper[1].string, ":")
+			// creating the DateTime variable
+			result = new DateTime()
+			result.year = iu.intFromString(dayStr[0].string)
+			result.month = iu.intFromString(dayStr[1].string)
+			result.day = iu.intFromString(dayStr[2].string)
+			result.hour = iu.intFromString(timeStr[0].string)
+			result.minute = iu.intFromString(timeStr[1].string)
+			result.second = iu.intFromString(timeStr[2].string)
+			result.millisecond = 0
+			return result
+		}
+		return null
+	}
+
+	char[] parseStringFromDate(DateTime date) {
+		char result[] = null
+		result = new char[](iu.intToString(date.year), "-", iu.intToString(date.month), "-", iu.intToString(date.day),
+			" ", iu.intToString(date.hour), ":", iu.intToString(date.minute), ":", iu.intToString(date.second))
+		return result
+	}
+}

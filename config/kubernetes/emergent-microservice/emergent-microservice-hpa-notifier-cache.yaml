@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    run: emergent-microservice
+  name: emergent-microservice
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: emergent-microservice
+  template:
+    metadata:
+      labels:
+        run: emergent-microservice
+    spec:
+      containers:
+      - command: 
+        image: docker.io/robertovrf/em-cache:notifier
+        name: emergent-microservice
+        ports:
+        - containerPort: 2020
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: 900m
+        readinessProbe:
+          httpGet:
+            path: /collector/resources/ping
+            port: 2020
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        env:
+          - name: DATABASE_HOST
+            value: "34.123.235.149"
+          - name: METRIC_SERVER
+            value: "34.123.119.64"
+          - name: POD_ID
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.uid

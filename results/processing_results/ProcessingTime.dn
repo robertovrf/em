@@ -1,0 +1,27 @@
+const char debugMSG[] = "[@ProcessingResults]"
+
+component provides App requires io.Output out, io.TextFile, data.StringUtil strUtil, 
+    time.DateUtil dateUtil, data.IntUtil iu {
+    
+    TextFile inputFile
+    TextFile outputFile
+   
+    int App:main(AppParam params[]) {
+        inputFile = new TextFile("cache-270rounds.txt", File.READ)
+        outputFile = new TextFile("testing_time.txt", File.WRITE)
+        
+        char rawInput[] = inputFile.readLine()
+        String parsedInput[] = strUtil.explode(rawInput, " ")
+        String startTime[] = strUtil.explode(parsedInput[2].string, ":")
+        DateTime sttime = new DateTime(0,0,0,startTime[0].string, startTime[1].string,startTime[2].string,0) 
+        int mystarttime = dateUtil.toMilliseconds(sttime)
+        
+        outputFile.writeLine(parsedLine[1].string)
+            
+        
+        inputFile.close()
+        outputFile.close()
+        out.println("Ended!")
+        return 0
+    }
+}

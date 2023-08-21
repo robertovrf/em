@@ -1,0 +1,5 @@
+interface DSInterceptor extends wsms.DocStreamDC {
+	DSInterceptor(store TCPSocket s, store Header headers[], store Header responseHeaders[])
+	void set(store DocStreamDC original)
+	char[] get()
+}

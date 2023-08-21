@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    run: metric-server
+  name: metric-server
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: metric-server
+  template:
+    metadata:
+      labels:
+        run: metric-server
+    spec:
+      containers:
+      - command: 
+        image: docker.io/robertovrf/metric-server:1.0
+        name: metric-server
+        ports:
+        - containerPort: 2006
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: 900m
+        env:
+          - name: POD_ID
+            valueFrom:
+              fieldRef:
+                apiVersion: v1
+                fieldPath: metadata.uid

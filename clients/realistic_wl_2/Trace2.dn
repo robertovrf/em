@@ -1,0 +1,109 @@
+const char debugMSG[] = "[@Trace]"
+
+component provides App requires io.Output out, data.IntUtil iu, net.TCPSocket, 
+	net.TCPServerSocket, data.StringUtil strUtil, io.TextFile, time.DateUtil dateUtil,
+	time.Calendar ic, net.http.HTTPRequest request, util.RandomInt ranInt, time.Timer t {
+
+	Mutex lock = new Mutex()
+	char SERVERADDR[] = "35.224.143.87:2020"
+	//char SERVERADDR[] = "localhost:2020"
+	int trace[]
+	int pointer
+	bool flag
+	int numThread
+
+	void execute(int index) {	
+		int id 				= 0
+		Header header[] 	= null
+		char url[] 			= null
+		//0 - 99
+		//least - max-1
+		if ((index >= 0) && (index < 100)) {
+			header = new Header[](new Header("Cache-Control", new char[]("max-age=1")))
+			id = index + 1
+			url = new char[](SERVERADDR, "/collector/resources/", iu.intToString(id), "/data/last")
+		}
+		// 100 - 199
+		//least - max-5
+		if ((index > 99) && (index < 200)) {
+			header = new Header[](new Header("Cache-Control", new char[]("max-age=5")))
+			id = index - 99
+			url = new char[](SERVERADDR, "/collector/resources/", iu.intToString(id), "/data/last")
+		}
+		// 200 - 299
+		// historical - max-1
+		if ((index > 199) && (index < 300)) {
+			header = new Header[](new Header("Cache-Control", new char[]("max-age=1")))
+			id = index - 199
+			url = new char[](SERVERADDR, "/collector/resources/", iu.intToString(id), "/data")
+		}
+		// 300 - 399
+		//historical - max-5
+		if ((index > 299) && (index < 400)) {
+			header = new Header[](new Header("Cache-Control", new char[]("max-age=5")))
+			id = index - 299
+			url = new char[](SERVERADDR, "/collector/resources/", iu.intToString(id), "/data")
+		}
+		HTTPResponse response = request.get(url, header)
+		//out.println("$url")
+	}
+
+	void loadTrace(char fileName[]) {
+		TextFile file = new TextFile(fileName, File.READ)
+		while (!file.eof()) {
+			trace = new int[](trace, iu.intFromString(file.readLine()))			
+		}
+		file.close()
+		pointer = 0
+	}
+
+	int getIndex() {
+		mutex(lock) {
+			if (pointer == trace.arrayLength) {
+				pointer = 0
+			}
+			int result = trace[pointer]
+			pointer++
+			return result
+		}
+	}
+
+	void runTest() {
+		loadTrace("trace2.txt")
+		while(flag) {
+			DateTime dt1 = null
+			DateTime dt2 = null
+			dt1 = ic.getTime()
+			Thread thread[] = new Thread[numThread]
+			for (int i = 0; i < numThread; i++) {
+				thread[i] = asynch::execute(getIndex())
+			}
+			for (int i = 0; i < numThread; i++) {
+				thread[i].join()
+			}
+			dt2 = ic.getTime()
+			if ((dt1 != null) && (dt2 != null)) {
+				int result = dateUtil.toMilliseconds(dateUtil.diff(dt1, dt2))
+				out.println("$(debugMSG) $(iu.intToString(result))")
+			}
+		}
+	}
+
+	int App:main(AppParam params[]) {
+		if (params.arrayLength > 0) {
+			flag = true
+			if (params.arrayLength > 1) {
+				numThread = iu.intFromString(params[1].string)
+			} else { numThread = 5 }
+			int sleepTime = iu.intFromString(params[0].string)
+			asynch::runTest()
+			t.sleep(sleepTime)
+			flag = false
+		} else {
+			flag = true
+			numThread = 5
+			runTest()
+		}
+		return 0
+	}
+}

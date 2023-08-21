@@ -1,0 +1,328 @@
+data Big {
+	int min
+	int max
+}
+
+data Small {
+	int min
+	int max
+}
+
+data Repeatability {
+	int min
+	int max
+}
+
+data Total {
+	int min
+	int max
+}
+
+data Int {
+	int num
+}
+
+data ReqCount {
+	char input[]
+	int count
+}
+
+data Input {
+	char composition[]
+	ReqCount reqs[]
+}
+
+component provides App requires io.Output out, data.IntUtil iu, data.StringUtil strUtil,
+	io.TextFile, data.adt.HashTable {
+
+	Big big
+	Small small
+	Repeatability repeat
+	Total total
+	Input inputs[]
+	Input exploitation[]
+
+	void loadExploration(char fileName[]) {
+		TextFile file = new TextFile(fileName, File.READ)
+		char buf[]
+		while ((buf = file.readLine()) != null) {
+			if (strUtil.find(buf, ":") != StringUtil.NOT_FOUND) {
+				inputs = new Input[](inputs, new Input(buf, null))
+			}
+			if (strUtil.find(buf, "/") != StringUtil.NOT_FOUND) {
+				String myreq[] = strUtil.explode(buf, " - ")
+				inputs[inputs.arrayLength-1].reqs = new ReqCount[](inputs[inputs.arrayLength-1].reqs,
+					new ReqCount(myreq[0].string, iu.intFromString(myreq[1].string)))
+			}
+		}
+		file.close()
+	}
+
+	// function that helps in the debugging process
+	void printInputs() {
+		for (int i = 0; i < inputs.arrayLength; i++) {
+			out.println("$(inputs[i].composition):")
+			for (int j = 0; j < inputs[i].reqs.arrayLength; j++) {
+				out.println("\t $(inputs[i].reqs[j].input) - $(iu.intToString(inputs[i].reqs[j].count))")
+			}
+		}
+	}
+
+	int processBig(ReqCount reqs[]) {
+		int numBig = 0
+		for (int i = 0; i < reqs.arrayLength; i++) {
+			if ((strUtil.find(reqs[i].input, "last")
+				== StringUtil.NOT_FOUND)) {
+				numBig = numBig + reqs[i].count
+			}
+		}
+		return numBig
+	}
+
+	int processSmall(ReqCount reqs[]) {
+		int numSmall = 0
+		for (int i = 0; i < reqs.arrayLength; i++) {
+			if ((strUtil.find(reqs[i].input, "last") 
+				!= StringUtil.NOT_FOUND)) {
+				numSmall = numSmall + reqs[i].count
+			}
+		}
+		return numSmall
+	}
+
+	int processRepetitions(ReqCount reqs[]) {
+		int numRepetition = 0
+		for (int i = 0; i < reqs.arrayLength; i++) {
+			if (numRepetition < reqs[i].count) {
+				numRepetition = reqs[i].count
+			}
+		}
+		return numRepetition - 1
+	}
+
+	int processTotal(ReqCount reqs[]) {
+		int numTotal = 0
+		for (int i = 0; i < reqs.arrayLength; i++) {
+			numTotal = numTotal + reqs[i].count
+		}
+		return numTotal
+	}
+
+	void loadExploitation(char fileName[]) {
+		TextFile file = new TextFile(fileName, File.READ)
+		char buf[]
+		while ((buf = file.readLine()) != null) {
+			if (strUtil.find(buf, ":") != StringUtil.NOT_FOUND) {
+				exploitation = new Input[](exploitation, new Input(buf, null))
+			}
+			if (strUtil.find(buf, "/") != StringUtil.NOT_FOUND) {
+				//out.println("$buf")
+				String myreq[] = strUtil.explode(buf, " - ")
+				exploitation[exploitation.arrayLength-1].reqs = new ReqCount[](exploitation[exploitation.arrayLength-1].reqs,
+					new ReqCount(myreq[0].string, iu.intFromString(myreq[1].string)))
+			}
+		}
+		file.close()
+	}
+
+	bool rangeCalc(int minValue, int maxValue, int value, int ERROR_FACTOR) {
+		int min = 0
+		int max = 0
+		if ((minValue > 0) && (minValue < 100)) {
+			if (minValue <= ERROR_FACTOR) { min = 1 }
+			else { min = minValue - ERROR_FACTOR }
+		} else { min = minValue }
+		if ((maxValue < 100) && (maxValue > 0)) {
+			if ((maxValue + ERROR_FACTOR) >= 100) { max = 99 }
+			else { max = maxValue + ERROR_FACTOR }
+		} else { max = maxValue }
+		if ((value < min) || (value > max)) { return false }
+		return true
+	}
+
+	void experiment(char explorationFile[], char exploitationFile[], int ERROR_FACTOR) {
+		big = null
+		small = null
+		repeat = null
+		inputs = null
+		exploitation = null
+		loadExploration(explorationFile)
+		big = new Big()
+		big.min = 1000
+		small = new Small()
+		small.min = 1000
+		repeat = new Repeatability()
+		repeat.min = 1000
+		total = new Total()
+		total.min = 1000
+		int bigNum = 0
+		int smallNum = 0
+		int repeatNum = 0
+		int totalNum = 0
+		int perBig = 0
+		int perSmall = 0
+		int perRep = 0
+		for (int i = 0; i < inputs.arrayLength; i++) {
+			/* debugging msgs */
+			totalNum = processTotal(inputs[i].reqs)
+			bigNum = (processBig(inputs[i].reqs)*100)/totalNum
+			smallNum = (processSmall(inputs[i].reqs)*100)/totalNum
+			repeatNum = (processRepetitions(inputs[i].reqs)*100)/totalNum
+			if (big.max < bigNum) {
+				big.max = bigNum
+			}
+			if (big.min > bigNum) {
+				big.min = bigNum
+			}
+			if (small.max < smallNum) {
+				small.max = smallNum
+			}
+			if (small.min > smallNum) {
+				small.min = smallNum
+			}
+			if (repeat.max < repeatNum) {
+				repeat.max = repeatNum
+			}
+			if (repeat.min > repeatNum) {
+				repeat.min = repeatNum
+			}
+			if (total.max < totalNum) {
+				total.max = totalNum
+			}
+			if (total.min > totalNum) {
+				total.min = totalNum
+			}
+		}
+		out.println("Environment:")
+		out.println("Big: $(iu.intToString(big.min))% - $(iu.intToString(big.max))%")
+		out.println("Small: $(iu.intToString(small.min))% - $(iu.intToString(small.max))%")
+		out.println("Repetition: $(iu.intToString(repeat.min))% - $(iu.intToString(repeat.max))%")
+		out.println("Total: $(iu.intToString(total.min)) - $(iu.intToString(total.max))\n\n")
+		loadExploitation(exploitationFile)
+		int numOfClassified = 0
+		for (int i = 0; i < exploitation.arrayLength; i++) {
+			bool classify = true
+			totalNum = processTotal(exploitation[i].reqs)
+			perBig = (processBig(exploitation[i].reqs)*100)/totalNum
+			perSmall = (processSmall(exploitation[i].reqs)*100)/totalNum
+			perRep = (processRepetitions(exploitation[i].reqs)*100)/totalNum
+			
+			//out.println("$(iu.intToString(bigNum)) >= $(iu.intToString(perBig)) ")
+			if (!rangeCalc(big.min, big.max, perBig, ERROR_FACTOR)) {
+				classify = false
+			}
+			if (!rangeCalc(small.min, small.max, perSmall, ERROR_FACTOR)) {
+				classify = false
+			}
+			//if (!rangeCalc(repeat.min, repeat.max, perRep, ERROR_FACTOR)) {
+			//	classify = false
+			//}
+			if (classify) {
+				numOfClassified++
+			} else {
+				out.println("\n---- $(iu.intToString(i+1)): ---- ")
+				out.println("Big: $(iu.intToString(perBig))%")
+				out.println("Small: $(iu.intToString(perSmall))%")
+				out.println("Repetition: $(iu.intToString(perRep))%")
+			}
+		}
+		out.println("\nNum of observation cycles: $(iu.intToString(exploitation.arrayLength))")
+		out.println("Num of correctly classified cycle: $(iu.intToString(numOfClassified))")
+	}
+
+	void experimentNegative(char explorationFile[], char exploitationFile[], int ERROR_FACTOR) {
+		big = null
+		small = null
+		repeat = null
+		inputs = null
+		exploitation = null
+		loadExploration(explorationFile)
+		big = new Big()
+		big.min = 1000
+		small = new Small()
+		small.min = 1000
+		repeat = new Repeatability()
+		repeat.min = 1000
+		total = new Total()
+		total.min = 1000
+		int bigNum = 0
+		int smallNum = 0
+		int repeatNum = 0
+		int totalNum = 0
+		int perBig = 0
+		int perSmall = 0
+		int perRep = 0
+		for (int i = 0; i < inputs.arrayLength; i++) {
+			/* debugging msgs */
+			totalNum = processTotal(inputs[i].reqs)
+			bigNum = (processBig(inputs[i].reqs)*100)/totalNum
+			smallNum = (processSmall(inputs[i].reqs)*100)/totalNum
+			repeatNum = (processRepetitions(inputs[i].reqs)*100)/totalNum
+			if (big.max < bigNum) {
+				big.max = bigNum
+			}
+			if (big.min > bigNum) {
+				big.min = bigNum
+			}
+			if (small.max < smallNum) {
+				small.max = smallNum
+			}
+			if (small.min > smallNum) {
+				small.min = smallNum
+			}
+			if (repeat.max < repeatNum) {
+				repeat.max = repeatNum
+			}
+			if (repeat.min > repeatNum) {
+				repeat.min = repeatNum
+			}
+		}
+		out.println("\n\nNegative classification:")
+		loadExploitation(exploitationFile)
+		int numOfClassified = 0
+		for (int i = 0; i < exploitation.arrayLength; i++) {
+			bool classify = false
+			totalNum = processTotal(exploitation[i].reqs)
+			perBig = (processBig(exploitation[i].reqs)*100)/totalNum
+			perSmall = (processSmall(exploitation[i].reqs)*100)/totalNum
+			perRep = (processRepetitions(exploitation[i].reqs)*100)/totalNum
+			if (rangeCalc(big.min, big.max, perBig, ERROR_FACTOR)) {
+				if (rangeCalc(small.min, small.max, perSmall, ERROR_FACTOR)) {
+					//if (rangeCalc(repeat.min, repeat.max, perRep, ERROR_FACTOR)) {
+						classify = true
+					//}
+				}
+			}
+			if (classify) {
+				numOfClassified++
+				out.println("\n---- $(iu.intToString(i+1)): ---- ")
+				out.println("Big: $(iu.intToString(perBig))%")
+				out.println("Small: $(iu.intToString(perSmall))%")
+				out.println("Repetition: $(iu.intToString(perRep))%")
+			}
+		}
+		out.println("Num of observation cycles: $(iu.intToString(exploitation.arrayLength))")
+		out.println("Num of correctly classified cycle: $(iu.intToString(exploitation.arrayLength-numOfClassified))")
+	}
+
+	int App:main(AppParam params[]) {
+		out.println("--------- Experiment 1: ---------")
+		experiment("Trace1/exploration_trace1updated.txt", "Trace1/exploitation_trace1updated.txt", 11)
+		experimentNegative("Trace1/exploration_trace1updated.txt", "Trace2/exploitation_trace2.txt", 11)
+		experimentNegative("Trace1/exploration_trace1updated.txt", "Trace3/exploitation_trace3.txt", 11)
+		out.println("--------- Experiment 1: ---------")
+		out.println("\n\n--------- Experiment 2: ---------")
+		experiment("Trace2/exploration_trace2.txt", "Trace2/exploitation_trace2.txt", 11)
+		experiment("Trace2/exploration_trace2.txt", "Volume/Trace2/exploitation-5.txt", 11)
+		experiment("Trace2/exploration_trace2.txt", "Volume/Trace2/exploitation-10.txt", 11)
+		experimentNegative("Trace2/exploration_trace2.txt", "Trace1/exploitation_trace1updated.txt", 11)
+		experimentNegative("Trace2/exploration_trace2.txt", "Trace3/exploitation_trace3.txt", 11)
+		out.println("--------- Experiment 2: ---------")
+		out.println("\n\n--------- Experiment 3: ---------")
+		experiment("Trace3/exploration_trace3.txt", "Trace3/exploitation_trace3.txt", 11)
+		experimentNegative("Trace3/exploration_trace3.txt", "Trace1/exploitation_trace1updated.txt", 11)
+		experimentNegative("Trace3/exploration_trace3.txt", "Trace2/exploitation_trace2.txt", 11)
+		out.println("--------- Experiment 3: ---------")
+		return 0
+	}
+}

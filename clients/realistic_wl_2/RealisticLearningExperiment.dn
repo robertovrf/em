@@ -1,0 +1,35 @@
+/**
+ * This component executes a series of traces for the learning experiment.
+ * 
+ * Author: Roberto Rodrigues Filho
+ * June @ 2022
+ */
+
+const char debugMSG[] = "[@RealisticLearningExperiment]"
+
+const char TRACE1[] = "Trace1.o"
+const char TRACE2[] = "Trace2.o"
+const char TRACE3[] = "TraceUniform.o"
+const int TIME = 240000
+
+component provides App requires io.Output out, os.Run run, time.Timer t, data.IntUtil iu {
+
+    void execute(char trace[]) {
+        out.println("$(debugMSG) Executing the trace: $(trace).")
+        RunStatus rS = run.execute(new char[]("dana ", trace, " $(iu.intToString(TIME))"))
+		if (rS.executed) {
+            //t.sleep(TIME)
+            out.println("$(debugMSG) Trace sucessfully executed.")
+        } else  { out.println("$(debugMSG) Failed to execute trace: $(trace)!") }
+    }
+
+    int App:main(AppParam params[]) {
+        execute(TRACE1)
+        execute(TRACE2)
+        execute(TRACE3)
+        execute(TRACE2)
+        execute(TRACE3)
+        execute(TRACE1)
+        return 0
+    }
+}

@@ -1,0 +1,251 @@
+// *************************
+// MetricServer: Module that interacts with our Dana version of HPA
+// Author: Roberto Rodrigues Filho
+// March @ 2022
+// *************************
+
+/******* data types *******/
+data Action {
+	char action[]
+	char params[]
+}
+/*************************/
+
+/******* constants *******/
+const char debugMSG[] 				= "[@MetricServer]"
+const char RESPONSE_TIME[] 			= "response_time"
+const char REGISTER[] 				= "register"
+const char HPA_RESPONSE[] 			= "hpa_response"
+const char RESTART[] 				= "restart"
+const char LEARNING[]				= "learning"
+const char RESTARTLEARNING[]		= "restartlearning"
+const char STOPLEARNING[]			= "stoplearning"
+const char CHANGECOMP[]				= "changecomp"
+const char STARTTEST[]				= "starttest"
+const char COMMAND[]				= "command"
+const char END[]	 				= "\r\n\r\n"
+const int PORT_NUM 					= 2006
+/*************************/
+
+/******* component *******/
+component provides App requires io.Output out, data.IntUtil iu, data.DecUtil du, net.TCPSocket, 
+	net.TCPServerSocket, net.http.HTTPRequest request, data.StringUtil strUtil, time.Timer t {
+	
+	/******* global vars *******/
+	int pointer 					= 0
+	dec operatingPalsRespTime[] 	= null
+	Action operatingPalsAction[] 	= null
+	Mutex lock 						= new Mutex()
+	/*************************/
+
+	/******* functions *******/
+	// supports 100 replicas max
+	void startOperatingPalsRespTime() {
+		operatingPalsRespTime = new dec[100]
+		for (int i = 0; i < 100; i++) {
+			operatingPalsRespTime[i] = 0.0
+		}
+	}
+
+	void startOperatingPalsAction() {
+		operatingPalsAction = new Action[100]
+		for (int i = 0; i < 100; i++) {
+			operatingPalsAction[i] = null
+		}
+	}
+
+	dec calculateAvg() {
+		if (pointer == 0) {
+			out.println("------------------------")
+			out.println("0.0")
+			out.println("------------------------")
+			return 0.0
+		} else if (pointer > 0) {
+			dec helper = 0.0
+			for (int i = 0; i < pointer; i++) {
+				helper += operatingPalsRespTime[i]		
+			}
+			dec avg = helper/pointer
+			out.println("------------------------")
+			out.println("$(du.decToString(avg))")
+			out.println("------------------------")
+			startOperatingPalsRespTime()
+			return avg
+		} else { out.println("$(debugMSG) Something went wrong!") }
+		return 0.0
+	}
+
+	void registerResponse(dec time, int index) {
+		operatingPalsRespTime[index] = time
+		out.println("[$(iu.intToString(index))] $(du.decToString(time))")
+	}
+
+	char[] getAllMetrics() {
+		char result[]
+		if (pointer > 0) {
+			result = new char[](du.decToString(operatingPalsRespTime[0]))
+			for (int i = 1; i < pointer; i++) {
+				result = new char[](result, "-", du.decToString(operatingPalsRespTime[i]))
+			}	
+		} else {
+			result = "-"
+		}
+		return result
+	}
+
+	// only register a new action if all previous actions were already executed
+	bool registerAction(Action act) {
+		if ((pointer > 0) || (operatingPalsAction != null)) {
+			for (int i = 0; i < pointer; i++) {
+				if (operatingPalsAction[i] == null){
+					operatingPalsAction[i] = act
+				} else { return false }
+			}
+		} else { return false }
+		return true
+	}
+
+	Action actionToPerform(int serverID) {
+		if (operatingPalsAction != null) {
+			if (operatingPalsAction[serverID] != null) {
+				return operatingPalsAction[serverID]
+			}
+		}
+		return null
+	}
+
+	void confirmAction(int serverID, TCPSocket socket) {
+		char buf[] = readFromSocket(socket)
+		if (buf == "OK") { 
+			operatingPalsAction[serverID] = null
+			out.println("$(debugMSG) ACTION CONFIRMED.")
+		} else {
+			out.println("$(debugMSG) ACTION NOT CONFIRMED.")
+		}
+	}
+
+	char[] readFromSocket(TCPSocket socket) {
+		char buf[] = null
+		char last4[] = new char[4]
+		while (last4 != END) {
+			char b[] = socket.recv(1)
+			buf = new char[](buf, b)
+			last4[0] = last4[1]
+			last4[1] = last4[2]
+			last4[2] = last4[3]
+			last4[3] = b[0]
+		}
+		String helper[] = strUtil.explode(buf, END)
+		return helper[0].string
+	}
+
+	void process(TCPSocket socket) {
+		char buf[] = readFromSocket(socket)
+		String helper[] = strUtil.explode(buf, "|")
+		// REGISTERING OPERATING PALs
+		if (helper[0].string == REGISTER) {
+			mutex(lock) {
+				// sends back the server's ID
+				socket.send(new char[]("register|", iu.intToString(pointer), END))
+				pointer++
+				out.println("$(debugMSG) REGISTERED TO HPA.")
+				// REGISTERING RESPONSE TIME	
+			}
+		} else if (helper[0].string == RESPONSE_TIME) {
+			mutex(lock) {
+				if (iu.intFromString(helper[1].string) == INT_MAX) {
+					registerResponse(0.0, 
+						iu.intFromString(helper[2].string))
+				} else {
+					registerResponse(du.decFromString(helper[1].string), 
+						iu.intFromString(helper[2].string))
+				}
+				out.println("$(debugMSG) REGISTERED RESPONSE TIME.")
+				// is there a way to perform synchronisation?
+				// after registering response time -- MS sends some synch messages
+				/* commands:
+				 * 1. start learning
+				 * ... parameters: learning|rounds
+				 * 2. restart learning
+				 * ... how do I restart learning? -- you do not, you just delete the data structure with info
+				 * ... parameters: restartlearning
+				 * 3. stop learning
+				 * ... 
+				 * 4. change composition
+				 * ... parameteres: changecomp|NFProxy.o or NFPCache,etc.
+				 * 5. start running test 
+				 * ... paameters: runtest|rounds
+				 */
+				Action toPerform = actionToPerform(iu.intFromString(helper[2].string))
+				if (toPerform != null) {
+					if (toPerform.action != null) {
+						if (toPerform.action == LEARNING) {
+							socket.send(new char[]("learning|", toPerform.params, END))
+						}
+						if (toPerform.action == RESTARTLEARNING) {
+							socket.send(new char[]("restartlearning|", toPerform.params, END))
+						}
+						if (toPerform.action == STOPLEARNING) {
+							socket.send(new char[]("stoplearning|", toPerform.params, END))
+						}
+						if (toPerform.action == CHANGECOMP) {
+							socket.send(new char[]("changecomp|", toPerform.params, END))
+						}
+						if (toPerform.action == STARTTEST) {
+							socket.send(new char[]("starttest|", toPerform.params, END))
+						}
+						confirmAction(iu.intFromString(helper[2].string), socket)
+					} else { socket.send(new char[]("OK", END)) }
+				} else { socket.send(new char[]("OK", END)) }
+			}
+		// GETTING AVG RESPONSE TIME
+		} else if (helper[0].string == HPA_RESPONSE) {
+			mutex(lock) {
+				char individualValues[] = getAllMetrics()
+				dec avg = calculateAvg()
+				int avgInt = avg
+				socket.send(new char[]("response|", iu.intToString(avgInt), "|", 
+					iu.intToString(pointer), "|", individualValues, END))
+				out.println("$(debugMSG) GOT AVG.")
+			}
+		} else if (helper[0].string == RESTART) {
+			mutex(lock) {
+				startOperatingPalsRespTime()
+				pointer = 0
+				socket.send(new char[]("OK", END))
+				out.println("$(debugMSG) RESTARTED SERVER.")
+			}
+		} else if (helper[0].string == COMMAND) {
+			mutex(lock) {
+				out.println("$(debugMSG) $(iu.intToString(helper.arrayLength)) $(helper[0].string) $(helper[1].string) $(helper[2].string)")
+				if (registerAction(new Action(helper[1].string, helper[2].string))) {
+					socket.send(new char[]("OK", END))
+					out.println("$(debugMSG) COMMAND REGISTERED.")
+				} else {
+					socket.send(new char[]("NOTOK", END))
+					out.println("$(debugMSG) COMMAND NOT REGISTERED.")
+				}
+			}
+		}
+		socket.disconnect()
+	}
+	/*************************/
+
+	/******* entry-point *******/
+	int App:main(AppParam params[]) {
+		out.println("$(debugMSG) Metric Server running..")
+		startOperatingPalsAction()
+		startOperatingPalsRespTime()
+		TCPServerSocket s = new TCPServerSocket()
+		if (!s.bind(TCPServerSocket.ANY_ADDRESS, PORT_NUM)) {
+			throw new Exception("Failed to bind master socket")
+		}
+		while (true) {
+			TCPSocket cs = new TCPSocket()
+			if (cs.accept(s)) { asynch::process(cs) }
+		}
+		return 0
+	}
+	/*************************/
+}
+/*************************/

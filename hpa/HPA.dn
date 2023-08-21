@@ -1,0 +1,118 @@
+// *************************
+// Module that interacts with K8 to scale pods horizontally.
+// Author: Roberto Rodrigues Filho
+// April @ 2021
+// *************************
+
+/******* constants *******/
+const char debugMSG[] 		= "[@HPA]"
+const char URL[] 			= "34.123.119.64"//metric server
+const char HPA_RESPONSE[] 	= "hpa_response"
+const char END[] 			= "\r\n\r\n"
+const int PORT 	 			= 2006
+const int OBSERV_WINDOW 	= 60 // secs
+const int metricThreshold 	= 350 // ms
+/*************************/
+
+/******* component *******/
+component provides App requires io.Output out, data.IntUtil iu, net.TCPSocket, 
+	data.StringUtil strUtil, time.Timer t, util.Math math, os.Run run, io.Input in {
+
+	/******* global vars *******/
+	bool exit = false
+	bool replicatedLastRound = false
+	/*************************/
+
+	/******* functions *******/
+	int getResponseTime() {
+		int id = 0
+		TCPSocket s = new TCPSocket()
+		if (!s.connect(URL, PORT)) { 
+			out.println(new char[]("Error while trying", 
+				"to connect to server", 
+				"$(URL)", 
+				" - $(iu.intToString(PORT))"))
+		} 
+		s.send(new char[](HPA_RESPONSE, "|", END))
+		char buf[] = null
+		char last4[] = new char[4]
+		while (last4 != "\r\n\r\n") {
+			char b[] = s.recv(1)
+			buf = new char[](buf, b)
+			last4[0] = last4[1]
+			last4[1] = last4[2]
+			last4[2] = last4[3]
+			last4[3] = b[0]
+		}
+		s.disconnect()
+		String helper[] = strUtil.explode(buf, "|")
+		return iu.intFromString(helper[1].string)
+	}
+
+	// HPA equation
+	// desiredReplicas = ceil[currentReplicas * ( currentMetricValue / desiredMetricValue )]
+	// do not replicate twice in a row
+	void hpa_execute(int numRounds) {
+		int desiredReplicas = 0
+		int currentReplicas = 0
+		int numServices = 1
+		int currentMetricValue = 0
+		out.println("$(debugMSG) Starting HPA...")
+		for (int i = 0; i < numRounds; i++) {
+			if (exit) {
+				out.println("$(debugMSG) HPA stopping...")
+				break
+			}
+			t.sleep(OBSERV_WINDOW*1000)
+			currentMetricValue = getResponseTime()
+			out.println("$(debugMSG) $(iu.intToString(currentMetricValue)) - $(iu.intToString(numServices))")
+			desiredReplicas = math.ceil(numServices * (currentMetricValue / metricThreshold))
+			if ((desiredReplicas > currentReplicas) && (!replicatedLastRound)) {
+				RunStatus rS = run.execute(new char[]("kubectl scale deployments/emergent-microservice", 
+				" --replicas=$(desiredReplicas+1)"))
+				if (rS.executed) {
+					out.println("$(debugMSG) kubctl scale command executed successfully.")
+					currentReplicas = desiredReplicas
+					numServices = desiredReplicas + 1
+				}
+				replicatedLastRound = true
+			} else {
+				replicatedLastRound = false
+			}
+		}
+		out.println("$(debugMSG) Finishing HPA.")
+	}
+
+	void help() {
+		out.println("------------------------")
+		out.println("help: 		List all commands.")
+		out.println("run:		Runs HPA for a certain number of rounds.")
+		out.println("cancel:	Cancels HPA execution.")
+		out.println("------------------------")
+	}
+
+	void interpret(char cmd[]) {
+		if (cmd == "exit") {}
+		else if (cmd == "help") { help() }
+		else if (cmd == "run") {
+			out.print("$(debugMSG) numRounds: ")
+			char numRounds[] = in.readln()
+			asynch::hpa_execute(iu.intFromString(numRounds))
+		}
+	}
+	/*************************/
+	
+	/******* entry-point *******/
+	//TODO: pass metric server IP as paramters
+	int App:main(AppParam params[]) {
+		exit = false
+		char cmd[] = ""
+		while (cmd != "exit") {
+			out.print("prompt> ")
+			cmd = in.readln()
+			interpret(cmd)
+		}
+		return 0
+	}
+	/*************************/
+}

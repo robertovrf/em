@@ -1,0 +1,133 @@
+// *************************
+// Module that interacts with HPA
+// Author: Roberto Rodrigues Filho
+// August @ 2020
+// *************************
+
+/******* constants *******/
+const char debugMSG[] 			= "[@MetricNotifierApp]"
+const char REGISTER[] 			= "register"
+const char RESPONSE_TIME[] 		= "response_time"
+const char END[] 				= "\r\n\r\n"
+const int PORT 					= 2006
+/*************************/
+
+/******* component *******/
+component provides App requires io.Output out, data.IntUtil iu, monitoring.Perception,
+	net.TCPSocket, data.StringUtil strUtil, data.json.JSONParser parser, time.Timer t,
+	data.DecUtil du, os.SystemInfo info {
+
+	/******* global vars *******/
+	Perception perception 	= null
+	int id 					= 0
+	char URL[] 				= null //metric server
+	/*************************/
+
+	/******* functions *******/
+	TCPSocket connect() {
+        TCPSocket s = new TCPSocket()
+		if (!s.connect(URL, PORT)) { 
+			out.println(new char[]("Error while trying", 
+				"to connect to server", 
+				"$(URL)", 
+				" - $(iu.intToString(PORT))"))
+		}
+        return s
+    }
+
+	char[] readFromSocket(TCPSocket socket) {
+		char buf[] = null
+		char last4[] = new char[4]
+		while (last4 != "\r\n\r\n") {
+			char b[] = socket.recv(1)
+			buf = new char[](buf, b)
+			last4[0] = last4[1]
+			last4[1] = last4[2]
+			last4[2] = last4[3]
+			last4[3] = b[0]
+		}
+        String helper[] = strUtil.explode(buf, END)
+		return helper[0].string
+	}
+
+	bool registerMetric() {
+		TCPSocket s = new TCPSocket()
+		if (!s.connect(URL, PORT)) { 
+			out.println(new char[]("Error while trying", 
+				"to connect to server", 
+				"$(URL)", 
+				" - $(iu.intToString(PORT))"))
+		} 
+		s.send(new char[](REGISTER, "|", END))
+		char buf[] = null
+		char last4[] = new char[4]
+		while (last4 != "\r\n\r\n") {
+			char b[] = s.recv(1)
+			buf = new char[](buf, b)
+			last4[0] = last4[1]
+			last4[1] = last4[2]
+			last4[2] = last4[3]
+			last4[3] = b[0]
+		}
+		s.disconnect()
+		String helper[] = strUtil.explode(buf, "|")
+		id = iu.intFromString(helper[1].string)
+		return true
+	}
+
+	void send(dec value) {
+		TCPSocket s = connect()
+		s.send(new char[](RESPONSE_TIME, "|", du.decToString(value), "|", iu.intToString(id), END))
+        char buf[] = readFromSocket(s)
+        if (buf == "OK") {
+            out.println("$(debugMSG) OK!")
+        } else {
+            // DO NOT DO ANYTHING!
+            s.send(new char[]("OK", END))
+        }
+		s.disconnect()
+	}
+
+	dec process(char perceptionData[]) {
+		JSONElement document = parser.parseDocument(perceptionData)
+		JSONElement metricsJSON = parser.getValue(document, "metrics")
+		if (metricsJSON != null) {
+			for (int pointer = 0; pointer < metricsJSON.children.arrayLength; pointer++) {
+				JSONElement childrenMetrics = metricsJSON.children[pointer]
+				char name[] = parser.getValue(childrenMetrics, "name").value
+				int value = iu.intFromString(parser.getValue(childrenMetrics, "value").value)
+				int count = iu.intFromString(parser.getValue(childrenMetrics, "count").value)
+				dec metricValue
+				if (value == INT_MAX) { metricValue = 0.0 }
+				else { metricValue = value/count }
+				out.println("$(du.decToString(metricValue))")
+				return metricValue
+			}
+		}
+		return 0.0
+	}
+	/*************************/
+
+	/******* entry-point *******/
+	int App:main(AppParam params[]) {
+		URL = info.getVariable("METRIC_SERVER")
+		perception = new Perception(false)
+		AppParam params2[] = new AppParam[2]
+		params2[0] = new AppParam()
+		params2[0].string = "-p"
+		params2[1] = new AppParam()
+		params2[1].string = "2020"
+		perception.setMain("../repository/TCPNetwork.o", params2)
+		perception.addProxy("|../pal/monitoring/proxies/DCProxy.o|*(*:hh.HTTPHandler[0]:*)|")
+		if (registerMetric()) {
+			perception.getPerceptionData()
+			while (true) {
+				t.sleep(5000)
+				send(process(perception.getPerceptionData()))
+			}
+		} else { out.println("$(debugMSG) Something went wrong!") }
+		return 0
+	}
+	/*************************/
+} 
+/*************************/

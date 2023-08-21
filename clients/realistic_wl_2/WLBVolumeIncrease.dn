@@ -1,0 +1,28 @@
+/**
+ * This component executes a series of traces for the resource use experiment.
+ * 
+ * Author: Roberto Rodrigues Filho
+ * June @ 2022
+ */
+const char debugMSG[] = "[@RealisticLearningExperiment]"
+const int TIME = 240000
+
+component provides App requires io.Output out, os.Run run, time.Timer t, data.IntUtil iu {
+
+    void execute(char numThreads[]) {
+        out.println("$(debugMSG) Executing the trace with $(numThreads) threads.")
+        RunStatus rS = run.execute(new char[]("dana TraceUniform.o",
+         " $(iu.intToString(TIME)) $(numThreads)"))
+		if (rS.executed) {
+            out.println("$(debugMSG) Trace sucessfully executed.")
+        } else  { out.println("$(debugMSG) Failed to execute trace!") }
+    }
+
+    int App:main(AppParam params[]) {
+        execute("20")
+        execute("40")
+        execute("60")
+        execute("75")
+        return 0
+    }
+}
