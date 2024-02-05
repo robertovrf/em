@@ -1,19 +1,18 @@
 # Emergent Microservice
 
-This project presents the first implementation of the Emergent Microservice concept. These dynamic microservices have the ability to adapt their internal architectural composition in real-time, enhancing performance and minimizing response time as the system operates. 
+This project introduces the implementation of the novel Emergent Microservice concept. These dynamic microservices possess the unique ability to dynamically adapt their internal architectural composition in real-time, thereby optimizing performance and minimizing response time during system operation.
 
-We provide scripts within this project that facilitate experimentation with our novel concept in an elastic environment, enabling the execution of emergent microservices within a Kubernetes-managed cluster. The subsequent sections details the compilation process and guide you through the execution of the Emergent Microservice.
+Within this project, we provide scripts that facilitate the exploration of our innovative concept within an elastic environment. These scripts enable the seamless execution of emergent microservices in a Kubernetes-managed cluster. The subsequent sections meticulously outline the compilation process and guide users through the execution of the Emergent Microservice.
 
-Note that we have experimented with the concept of Emergent Microservices on Google Cloud platform. Particularly, we have setup a Google Kubernetes Engine (GKE) cluster. All scripts avaialble in this project were designed to work on a GKE cluster. If you have a different Kubernetes-managed cluster, you have to make the required changes to execute the Emergent Microservice. We executed the Emergent Microservice on a GKE cluster with the following configuration:
+It's essential to note that our experimentation with Emergent Microservices was conducted on the Google Cloud platform. Specifically, we configured a Google Kubernetes Engine (GKE) cluster to support this endeavor. All scripts provided in this project are tailored to function seamlessly on a GKE cluster. Should you be utilizing a different Kubernetes-managed cluster, it is imperative to make the necessary adjustments to successfully execute the Emergent Microservice.
+
+Our experimentation took place on a GKE cluster with the following configuration:
 
 - Location: us-central region
 - Number of nodes: 8 nodes
-- Image: GKE standard Ubuntu image
-    --  with 2vCPUs
-    -- 4GB of memory
-    -- 100GB of storage
+- Image: GKE standard Ubuntu image with 2vCPUs, 4GB of memory, and 100GB of storage
 
-Note we used the Ubuntu image that comes with NFS, GlusterFS, XFS, Sysdig, Debian packages, and Docker installed.
+It's noteworthy that we utilized the Ubuntu image equipped with NFS, GlusterFS, XFS, Sysdig, Debian packages, and Docker pre-installed for a comprehensive testing environment.
 
 ## Required Software
 
@@ -112,4 +111,4 @@ To execute any of the client programs, execute the following command:
 $ dana Trace1.o
 ```
 
-For more information, feel free to get in contact by sending an email to: roberto.filho [at] ufsc.br
+For more information, feel free to get in touch by sending an email to: roberto.filho [at] ufsc.br
